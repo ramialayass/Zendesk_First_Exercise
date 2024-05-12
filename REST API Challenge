@@ -1,0 +1,257 @@
+# Online Python - IDE, Editor, Compiler, Interpreter
+import csv
+import json
+import requests
+import logging
+
+def main_function():
+    # let's say I have the CSV file saved to my local machine desktop. The CSV file has one worksheet with 10 rows where
+    # each row holds information about a particular ticket. Suppose that the file name is example_data_set.csv.
+    # The names of columns are as follows: subject, body,
+    # requester_name,  requester_organization, requester_primary_email, requester_secondary_email,
+    # user_in_CC_name, user_organization, user_primary_email, and user_secondary_email.
+
+    # So we have got to open the CSV file in the first place.
+    with (open(r"C:\Users\ramia\Downloads\example_data_set.csv") as csvfile):
+        # read the csv file
+        reader = csv.DictReader(csvfile)
+
+        # loop through each row or record and check the requester_primary_email value and
+        # user_primary_email column value for each row or ticket.
+        for row in reader:
+
+            requester_email = row['requester_primary_email']
+            cc_user_email = row['user_primary_email']
+
+            # user id of bothe users is required to trigger the Show User endpoint.
+            # so it must not be empty regardless of the path we will go through.
+            if not requester_email:
+                raise Exception("The requester_primary_email field value cannot be null."
+                                " Please update the CSV file and rerun the script thereafter.")
+
+            elif not cc_user_email:
+                raise Exception("The user_primary_email field value cannot be null."
+                                " Please update the CSV file and rerun the script thereafter.")
+
+
+        # First and foremost, we need to generate an authenticity_token so we can any of the APIs under Support API
+        # collection so we have got to call GET Show Self api
+        # token to be passed on to headers of the subsequent api calls.
+
+        token_json_response = self.generate_token()
+        token = token_json_response.get("user").get("authenticity_token")
+
+        for row in reader:
+
+            requester_user_id = 0
+            cc_user_id = 0
+
+            if row:
+                # call the function which triggers the Create Or Update User api for the requester which
+                # searches for the requester user based on email address in the first place.
+                requester_payload = self.prepare_values_requester_user(row)
+                requester_user_response_json = self.create_or_update_user(requester_payload, token)
+
+                if requester_user_response_json.status_code in [200, 201]:
+                    # 200 means that the user exists in Zendesk so we need to extract the user id
+                    # 201 means a new user profile has just been created for the requester.
+                    # extract the requester user id from the api response to pass on to payload of ticket creation endpoint
+                    requester_user_id = requester_user_response_json.get("user").get("id")
+
+                else:
+                    raise Exception("The requester with requester_email %s does not exist and has not been created."
+                                    "The error code description is as follows: " % (requester_email,requester_user_response_json.get("message")))
+
+                # call the function which triggers the Create Or Update User api for the user in CC.
+                cc_user_payload  = self.prepare_values_cc_user(row)
+                cc_user_response_json = self.create_or_update_user(cc_user_payload, token)
+
+                if cc_user_response_json.status_code in [200, 201]:
+                    # 200 means that the user exists in Zendesk so we need to extract the user id
+                    # 201 means a new user profile has just been created for the requester.
+                    # extract the cc user id from the api response to pass on to payload of ticket creation endpoint
+                    cc_user_id = cc_user_response_json.get("user").get("id")
+
+                else:
+                    raise Exception("The user in CC with cc_user_email %s does not exist and has not been created."
+                                    "The error code description is as follows: " % (cc_user_email,cc_user_response_json.get("message")))
+
+
+                # call function to generate payload for the Create Ticket api.
+                ticket_payload = self.prepare_values_ticket_creation(row, requester_user_id, cc_user_id)
+
+                # call function which triggers the POST Create Ticket api.
+                create_ticket_response_json = self.create_ticket(ticket_payload, token)
+
+                if not create_ticket_response_json.status_code == 201:
+                    raise Exception("The ticket with subject %s has not been created."
+                                    "The error code description is as follows: " % (row['subject'], create_ticket_response_json.get("message")))
+
+
+def generate_token(self):
+    """
+    Function to create a token.
+    """
+    url = 'https://zeooshelp.zendesk.com/api/v2/users/me'
+
+    headers = {
+        'Accept': "application/json",
+        'Authorization': "Basic < credentials >"
+    }
+
+    response = requests.post(url, headers=headers)
+    response_json = json.loads(response.text)
+
+    return response_json
+
+
+def create_or_update_user(self, payload, token):
+    """
+    Function to create or update a requester profile or profile of user in CC via POST Create Or Update User api.
+    :return: Dict containing all information pertaining to the newly created user or updated info pertaining to existing user.
+    """
+    url = 'https://zeooshelp.zendesk.com/api/v2/users/create_or_update'
+
+    headers = {
+        'content-type': "application/json",
+        'Accept': "application/json",
+        'X-CSRF-Token': token
+    }
+
+    self.validate_user_fields(payload)
+    json_data = json.dumps(payload)
+    _logger.info(json_data)
+
+    response = requests.post(url, data=json_data, headers=headers)
+    response_json = json.loads(response.text)
+
+    return response_json
+
+
+def create_ticket(self, ticket_payload, token):
+    """
+    Function to create a new ticket for a particular row using the
+    POST Create Ticket endpoint with the data stored in CSV file.
+    :return: Dict containing all information pertaining to the newly created ticket.
+    """
+    url = 'https://zeooshelp.zendesk.com/api/v2/tickets'
+
+    headers = {
+        'content-type': "application/json",
+        'Accept': "application/json",
+        'Authorization': "Basic < credentials >",
+        'X-CSRF-Token': token
+    }
+
+    self.validate_user_fields(ticket_payload)
+    json_data = json.dumps(ticket_payload)
+    _logger.info(json_data)
+
+    response = requests.post(url, data=json_data, headers=headers)
+    response_json = json.loads(response.text)
+
+    return response_json
+
+
+def prepare_values_ticket_creation(self, row, requester_user_id, cc_user_id):
+    """
+    Function to prepare values to insert on the rest api call.
+    :return: Dict regarding all ticket information required for Create Ticket endpoint, to be passed
+    on as payload.
+    """
+
+    result = {
+        "ticket": {
+            "comment": {
+                "body": str(row['body'])
+            },
+            "custom_fields": [
+                {
+                    "title": str(row['subject']),
+                    "description": str(row['body'])
+                }
+            ],
+            "email_ccs": [
+                {
+                    "action": "put",
+                    "user_email": str(row['user_primary_email']),
+                    "user_id": cc_user_id,
+                    "user_name": str(row['user_in_CC_name'])
+                }
+            ],
+            "requester_id": requester_user_id,
+            "status": "new",
+            "subject": str(row['subject'])
+        }
+    }
+
+    _logger.info(result)
+    return result
+
+
+def prepare_values_requester_user(self, row):
+    """
+    Function to prepare values to insert on the rest api call.
+    :return: Dict regarding all requester information required for Create Or Update User endpoint, to be passed
+    on as payload.
+    """
+    result = {
+        "user": {
+        "name": str(row['requester_name']),
+        "custom_role_id": 123456,
+        "email": str(row['requester_primary_email']),
+        "identities": [
+            {
+                "type": "email",
+                "value": row['requester_secondary_email']
+            }
+        ],
+        "organization": {
+            "name": str(row['requester_organization'])
+        },
+            "role": "agent"
+        }
+    }
+
+    _logger.info(result)
+    return result
+
+def prepare_values_cc_user(self, row):
+    """
+    Function to prepare values to insert on the rest api call.
+    :return: Dict regarding all information about user in CC required for Create Or Update User endpoint, to be passed
+    on as payload.
+    """
+    result = {
+        "user": {
+            "name": str(row['user_in_CC_name']),
+            "custom_role_id": 123456,
+            "email": str(row['user_primary_email']),
+            "identities": [
+                {
+                    "type": "email",
+                    "value": row['user_secondary_email']
+                }
+            ],
+            "organization": {
+                "name": str(row['user_organization'])
+            },
+            "role": "agent"
+        }
+    }
+
+    _logger.info(result)
+    return result
+
+
+def validate_user_fields(self, payload):
+    """
+    Function to validate all mandatory fields to be passed on to the payload, and return any error if any
+    of those fields is empty so we can take action accordingly.
+    """
+    for key, value in payload['user'].items():
+        if key in ["name", "email"] and not value:
+            raise Exception("Missing value for column name %s " % key)
+
+    if payload['user']['organization']['name'] is null:
+            raise Exception("Missing value for organization name")
